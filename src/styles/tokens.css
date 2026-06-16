@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+
+:root {
+  /* BACKGROUND FAMILY */
+  --color-bg:           #EDE8E1;
+  --color-surface:      #F5F1EC;
+  --color-surface-2:    #FAF7F4;
+
+  /* INK */
+  --color-ink:          #1C1814;
+  --color-ink-muted:    #78706A;
+
+  /* ACCENT */
+  --color-accent:       #B85C38;
+  --color-accent-sub:   #EAC9B8;
+  --color-accent-dim:   #8C3F22;
+
+  /* STRUCTURAL */
+  --color-border:       #D9D2CA;
+  --color-border-sub:   #E8E3DC;
+
+  /* TYPOGRAPHY */
+  --text-display: 24px;
+  --text-h1:      20px;
+  --text-h2:      17px;
+  --text-h3:      15px;
+  --text-body:    14px;
+  --text-small:   12px;
+  --text-caption: 11px;
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:   1.2;
+  --leading-body:    1.6;
+  --leading-compact: 1.4;
+
+  --tracking-tight:  -0.02em;
+  --tracking-normal:  0em;
+  --tracking-wide:    0.07em;
+
+  /* SPACING */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* BORDER RADIUS */
+  --radius-sm:    6px;
+  --radius-md:   10px;
+  --radius-lg:   16px;
+  --radius-full: 999px;
+
+  /* SHADOWS */
+  --shadow-subtle: 0 1px 2px rgba(28, 24, 20, 0.05);
+  --shadow-card:   0 2px 8px rgba(28, 24, 20, 0.07);
+  --shadow-raised: 0 4px 16px rgba(28, 24, 20, 0.09);
+  --shadow-modal:  0 8px 32px rgba(28, 24, 20, 0.13);
+
+  /* BORDERS */
+  --border:        1px solid var(--color-border);
+  --border-sub:    1px solid var(--color-border-sub);
+  --border-accent: 1px solid var(--color-accent);
+
+  /* ICONS */
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+
+  font-family: 'Manrope', sans-serif;
+}

@@ -1,0 +1,120 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: 'Manrope', sans-serif;
+  font-size: var(--text-body);
+  font-weight: var(--weight-regular);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+  position: relative;
+}
+
+/* Main content area — scrolls above the nav */
+.page-content {
+  position: absolute;
+  inset: 0;
+  bottom: 64px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-6) var(--space-4) var(--space-12);
+}
+
+/* Full-screen overlay pages (Settings, Library) */
+.screen-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-bg);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  animation: slideInRight 0.25s ease;
+}
+
+.screen-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4) var(--space-4);
+  border-bottom: var(--border-sub);
+  background: var(--color-bg);
+}
+
+.screen-header h1 {
+  font-size: var(--text-h1);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+}
+
+.screen-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-4) var(--space-4) var(--space-12);
+}
+
+/* Bottom navigation */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--color-surface-2);
+  border-top: var(--border);
+  display: grid;
+  grid-template-columns: 1fr 56px 1fr 1fr;
+  align-items: center;
+  padding: 0 var(--space-4);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+  z-index: 80;
+}
+
+/* Floating action button */
+.fab {
+  position: fixed;
+  bottom: calc(64px + env(safe-area-inset-bottom, 0px) + var(--space-4));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent);
+  color: #FFFFFF;
+  border: none;
+  box-shadow: var(--shadow-raised);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.fab:active {
+  background: var(--color-accent-dim);
+}
+
+/* Card sections */
+.section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
