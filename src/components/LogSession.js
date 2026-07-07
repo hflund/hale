@@ -1,21 +1,25 @@
 import {
   getAllBlocks, getExercisesByBlock, putSession, putSet, deleteSetsBySession,
-  deleteSession, getOpenSession, setSetting, getSetting,
+  deleteSession, getOpenSession, setSetting, getSetting, getLastExerciseSummary,
 } from '../data/db.js';
 import { getISOWeekKey } from '../data/db.js';
 
 let _db = null;
-let _overlay = null;
-let _sheet = null;
+let _pageWrap = null;
 let _timerInterval = null;
 let _midnightTimeout = null;
 let _currentSession = null; // { id, blockId, sessionStart, setIndex, exercises }
 let _sessionSets = {};       // exerciseId → [{ setLocalIdx, value, done }]
-let _onClose = null;
+let _lastSummaries = {};     // exerciseId → { count, maxValue, sessionStart } | null
 
-export async function openLogSession(db, onClose) {
+export async function mountLogSession(container, db) {
   _db = db;
-  _onClose = onClose;
+  clearTimer();
+  container.innerHTML = '';
+
+  _pageWrap = document.createElement('div');
+  _pageWrap.className = 'page-content';
+  container.appendChild(_pageWrap);
 
   // Check for open session
   const openSess = await getOpenSession(db);
@@ -23,45 +27,15 @@ export async function openLogSession(db, onClose) {
     _currentSession = openSess;
     const exercises = await getExercisesByBlock(db, openSess.blockId);
     _currentSession._exercises = exercises.filter(e => e.isActive).sort((a, b) => a.order - b.order);
-    renderSheet('active');
+    await loadLastSummaries(_currentSession._exercises);
+    renderActiveSession(_pageWrap);
   } else {
-    renderSheet('select');
+    renderSelectBlock(_pageWrap);
   }
 
+  if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [_pageWrap] });
+
   scheduleMidnightClose();
-}
-
-function renderSheet(step) {
-  removeSheet();
-
-  _overlay = document.createElement('div');
-  _overlay.className = 'sheet-overlay';
-  _overlay.addEventListener('click', (e) => {
-    if (e.target === _overlay && step !== 'active') removeSheet();
-  });
-
-  _sheet = document.createElement('div');
-  _sheet.className = 'sheet';
-
-  const handle = document.createElement('div');
-  handle.className = 'sheet-handle';
-  _sheet.appendChild(handle);
-
-  const scrollable = document.createElement('div');
-  scrollable.className = 'sheet-scrollable';
-  _sheet.appendChild(scrollable);
-
-  const inner = document.createElement('div');
-  inner.className = 'sheet-inner';
-  scrollable.appendChild(inner);
-
-  if (step === 'select') renderSelectBlock(inner);
-  else renderActiveSession(inner);
-
-  _overlay.appendChild(_sheet);
-  document.body.appendChild(_overlay);
-
-  if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [_sheet] });
 }
 
 // ── Step 1: Select block ───────────────────────────────────────────────────
@@ -92,7 +66,6 @@ async function renderSelectBlock(container) {
   newBlock.style.cssText += 'color:var(--color-ink-muted);border-style:dashed;';
   newBlock.innerHTML = `<svg data-lucide="plus" width="16" height="16" stroke-width="1.5"></svg>&nbsp;New Block`;
   newBlock.addEventListener('click', () => {
-    removeSheet();
     document.dispatchEvent(new CustomEvent('hale:navigate', { detail: 'library' }));
   });
   grid.appendChild(newBlock);
@@ -136,7 +109,18 @@ async function startSession(blockId, blockName) {
   _currentSession = session;
   _sessionSets = {};
 
-  renderSheet('active');
+  await loadLastSummaries(activeExercises);
+
+  _pageWrap.innerHTML = '';
+  renderActiveSession(_pageWrap);
+  if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [_pageWrap] });
+}
+
+async function loadLastSummaries(exercises) {
+  _lastSummaries = {};
+  await Promise.all(exercises.map(async (ex) => {
+    _lastSummaries[ex.id] = await getLastExerciseSummary(_db, ex.id, _currentSession?.id);
+  }));
 }
 
 // ── Step 2: Active session ─────────────────────────────────────────────────
@@ -174,16 +158,16 @@ function renderActiveSession(container) {
 
   container.appendChild(exerciseListEl);
 
-  // Fixed End Session button — sticky at bottom inside sheet
+  // Fixed End Session button — sticky at bottom of the page
   const footer = document.createElement('div');
   footer.style.cssText = `
     position: sticky;
     bottom: 0;
-    background: var(--color-surface-2);
+    background: var(--color-bg);
     padding: var(--space-4) 0;
-    margin: 0 calc(-1 * var(--space-5));
-    padding-left: var(--space-5);
-    padding-right: var(--space-5);
+    margin: 0 calc(-1 * var(--space-4));
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
   `;
   const endBtn = document.createElement('button');
   endBtn.className = 'btn btn-primary';
@@ -207,6 +191,15 @@ function renderExerciseRow(ex) {
     <span class="tag">${ex.setsTarget}</span>
   `;
   row.appendChild(nameRow);
+
+  // Last session summary
+  const lastSummary = _lastSummaries[ex.id];
+  if (lastSummary) {
+    const lastRow = document.createElement('div');
+    lastRow.style.cssText = 'font-size:var(--text-small);color:var(--color-ink-muted);margin-bottom:var(--space-2);';
+    lastRow.textContent = `last: ${formatLastSummary(lastSummary, ex.trackingType)}`;
+    row.appendChild(lastRow);
+  }
 
   // Weight input
   const weightRow = document.createElement('div');
@@ -328,7 +321,7 @@ async function saveSet(ex, setLocalIdx, state) {
 }
 
 async function endSession() {
-  if (!_currentSession) { removeSheet(); return; }
+  if (!_currentSession) return;
 
   const sessionEnd = Date.now();
   await putSession(_db, {
@@ -346,8 +339,9 @@ async function endSession() {
   _sessionSets = {};
   clearTimer();
 
-  removeSheet();
-  if (_onClose) _onClose();
+  _pageWrap.innerHTML = '';
+  renderSelectBlock(_pageWrap);
+  if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [_pageWrap] });
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────
@@ -375,11 +369,6 @@ function scheduleMidnightClose() {
   }, midnight - now);
 }
 
-function removeSheet() {
-  clearTimer();
-  if (_overlay) { _overlay.remove(); _overlay = null; _sheet = null; }
-}
-
 function formatElapsed(ms) {
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);
@@ -402,4 +391,17 @@ function parseValue(raw, trackingType) {
     return parseFloat(raw) || 0;
   }
   return parseFloat(raw) || 0;
+}
+
+function formatLastSummary(summary, trackingType) {
+  const { count, maxValue } = summary;
+  if (trackingType === 'bodyweight') return `${count} sets BW`;
+  if (trackingType === 'bodyweight_kg') return `${count}×BW+${maxValue}kg`;
+  if (trackingType === 'time') {
+    const m = Math.floor(maxValue / 60);
+    const s = Math.round(maxValue % 60);
+    return `${count}×${m > 0 ? m + ':' + String(s).padStart(2, '0') : s + 's'}`;
+  }
+  const unit = trackingType === 'reps' ? ' reps' : 'kg';
+  return `${count}×${maxValue}${unit}`;
 }

@@ -1,5 +1,5 @@
-import { getAllSessions, getAllSets, getAllExercises, getAllBlocks, getSetting } from '../data/db.js';
-import { renderHeatmap, renderSessionsBar, renderVolumeChart } from './Charts.js';
+import { getAllSessions, getAllSets, getAllExercises, getAllBlocks, getSetting, getRecoveryWeeks } from '../data/db.js';
+import { renderHeatmap, renderGoalHero, renderVolumeChart } from './Charts.js';
 import { getISOWeekKey, dateKey } from '../data/db.js';
 
 let _db = null;
@@ -8,17 +8,19 @@ export async function mountDashboard(container, db) {
   _db = db;
   container.innerHTML = '';
 
-  const [sessions, sets, exercises, blocks, weeklyGoal] = await Promise.all([
+  const [sessions, sets, exercises, blocks, weeklyGoal, recoveryWeeks] = await Promise.all([
     getAllSessions(db),
     getAllSets(db),
     getAllExercises(db),
     getAllBlocks(db),
     getSetting(db, 'weekly_goal'),
+    getRecoveryWeeks(db),
   ]);
 
   const goal = weeklyGoal || 3;
   const exerciseMap = Object.fromEntries(exercises.map(e => [e.id, e]));
   const blockMap = Object.fromEntries(blocks.map(b => [b.id, b]));
+  const recoveryWeekSet = new Set(recoveryWeeks);
 
   // Pre-compute
   const now = Date.now();
@@ -38,15 +40,20 @@ export async function mountDashboard(container, db) {
   // Current week sessions
   const thisWeekKey = getISOWeekKey(now);
   const thisWeekCount = sessionsByWeek[thisWeekKey] || 0;
+  const isRecoveryThisWeek = recoveryWeekSet.has(thisWeekKey);
 
   // Streak
-  const streak = calcStreak(sessionsByWeek, goal, now);
+  const streak = calcStreak(sessionsByWeek, goal, now, recoveryWeekSet);
 
   // Weekly volume (last 8 weeks)
   const volumeByWeek = calcVolumeByWeek(sessions, sets, exerciseMap, 8);
 
   // Current week volume
   const currentWeekVolume = volumeByWeek[volumeByWeek.length - 1]?.value || 0;
+  const prevWeekVolume = volumeByWeek[volumeByWeek.length - 2]?.value || 0;
+  const last4Volume = volumeByWeek.slice(-4).reduce((a, w) => a + w.value, 0);
+  const prev4Volume = volumeByWeek.slice(-8, -4).reduce((a, w) => a + w.value, 0);
+  const allTimeVolume = calcAllTimeVolume(sessions, sets, exerciseMap);
 
   // Personal bests
   const pbs = calcPBs(sets, exercises, sessions);
@@ -73,63 +80,64 @@ export async function mountDashboard(container, db) {
   statsCard.style.flexDirection = 'column';
   statsCard.style.gap = 'var(--space-5)';
 
-  // Heatmap
+  // Goal hero
+  const heroWrap = document.createElement('div');
+  renderGoalHero(heroWrap, thisWeekCount, goal, isRecoveryThisWeek);
+  statsCard.appendChild(heroWrap);
+
+  // Streak with stakes
+  const streakRow = document.createElement('div');
+  streakRow.style.cssText = 'display:flex;align-items:center;gap:var(--space-2);';
+  if (isRecoveryThisWeek) {
+    streakRow.innerHTML = `
+      <svg data-lucide="shield" width="16" height="16" stroke-width="1.5" style="color:var(--color-recovery)"></svg>
+      <span style="font-size:var(--text-small);color:var(--color-ink-muted);">Streak frozen at ${streak} week${streak !== 1 ? 's' : ''} during recovery</span>
+    `;
+  } else if (streak > 0 && thisWeekCount < goal) {
+    const remaining = goal - thisWeekCount;
+    streakRow.innerHTML = `
+      <svg data-lucide="flame" width="16" height="16" stroke-width="1.5" style="color:var(--color-accent)"></svg>
+      <span style="font-size:var(--text-small);color:var(--color-ink-muted);">${streak} week streak — ${remaining} session${remaining !== 1 ? 's' : ''} to keep it</span>
+    `;
+  } else if (streak > 0) {
+    streakRow.innerHTML = `
+      <svg data-lucide="flame" width="16" height="16" stroke-width="1.5" style="color:var(--color-accent)"></svg>
+      <span style="font-size:var(--text-small);color:var(--color-ink-muted);">${streak} week streak</span>
+    `;
+  }
+  if (streakRow.innerHTML) {
+    statsCard.appendChild(streakRow);
+    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [streakRow] });
+  }
+
+  // Divider
+  statsCard.appendChild(makeDivider());
+
+  // Heatmap (365 days)
   const heatWrap = document.createElement('div');
-  renderHeatmap(heatWrap, sessionsByDay);
+  renderHeatmap(heatWrap, sessionsByDay, recoveryWeekSet, getISOWeekKey);
   statsCard.appendChild(heatWrap);
 
   // Divider
   statsCard.appendChild(makeDivider());
 
-  // Sessions/week + volume inline
-  const midRow = document.createElement('div');
-  midRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
-
-  const sessionsGroup = document.createElement('div');
-  sessionsGroup.style.cssText = 'display:flex;flex-direction:column;gap:var(--space-2);';
-  const barEl = document.createElement('div');
-  renderSessionsBar(barEl, thisWeekCount, goal);
-  const sessLabel = document.createElement('div');
-  sessLabel.style.cssText = `font-size:var(--text-small);color:var(--color-ink-muted);`;
-  sessLabel.textContent = `${thisWeekCount} / ${goal} this week`;
-  sessionsGroup.appendChild(barEl);
-  sessionsGroup.appendChild(sessLabel);
-
-  const volumeGroup = document.createElement('div');
-  volumeGroup.style.cssText = 'display:flex;flex-direction:column;align-items:flex-end;gap:2px;';
-  const volNum = document.createElement('div');
-  volNum.style.cssText = `font-size:var(--text-display);font-weight:var(--weight-bold);line-height:var(--leading-tight);letter-spacing:var(--tracking-tight);`;
-  volNum.textContent = currentWeekVolume > 0 ? `${Math.round(currentWeekVolume)}` : '—';
-  const volLabel = document.createElement('div');
-  volLabel.style.cssText = `font-size:var(--text-caption);color:var(--color-ink-muted);`;
-  volLabel.textContent = 'kg this week';
-  volumeGroup.appendChild(volNum);
-  volumeGroup.appendChild(volLabel);
-
-  midRow.appendChild(sessionsGroup);
-  midRow.appendChild(volumeGroup);
-  statsCard.appendChild(midRow);
+  // Headline volume stats: This week / 4 weeks / All-time
+  const statsRow = document.createElement('div');
+  statsRow.style.cssText = 'display:flex;justify-content:space-between;gap:var(--space-3);';
+  statsRow.appendChild(makeVolumeStat('This week', currentWeekVolume, prevWeekVolume));
+  statsRow.appendChild(makeVolumeStat('4 weeks', last4Volume, prev4Volume));
+  statsRow.appendChild(makeVolumeStat('All time', allTimeVolume, null));
+  statsCard.appendChild(statsRow);
+  if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [statsRow] });
 
   // Volume chart (8 weeks)
   if (volumeByWeek.length > 1) {
+    statsCard.appendChild(makeDivider());
     const chartWrap = document.createElement('div');
     chartWrap.style.height = '80px';
     statsCard.appendChild(chartWrap);
     // Render after append so clientWidth is available
     requestAnimationFrame(() => renderVolumeChart(chartWrap, volumeByWeek));
-  }
-
-  // Streak
-  if (streak > 0) {
-    statsCard.appendChild(makeDivider());
-    const streakRow = document.createElement('div');
-    streakRow.style.cssText = 'display:flex;align-items:center;gap:var(--space-2);';
-    streakRow.innerHTML = `
-      <svg data-lucide="flame" width="16" height="16" stroke-width="1.5" style="color:var(--color-accent)"></svg>
-      <span style="font-size:var(--text-small);color:var(--color-ink-muted);">${streak} week streak</span>
-    `;
-    statsCard.appendChild(streakRow);
-    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [streakRow] });
   }
 
   // ── PBs ─────────────────────────────────────────────────────────────
@@ -252,15 +260,16 @@ function makeDivider() {
   return d;
 }
 
-function calcStreak(sessionsByWeek, goal, now) {
+function calcStreak(sessionsByWeek, goal, now, recoveryWeekSet = new Set()) {
   const currentWeek = getISOWeekKey(now);
   let streak = 0;
   let d = new Date(now);
   d.setDate(d.getDate() - 7); // start from last completed week
 
-  for (let i = 0; i < 52; i++) {
+  for (let i = 0; i < 104; i++) {
     const wk = getISOWeekKey(d);
     if (wk === currentWeek) { d.setDate(d.getDate() - 7); continue; }
+    if (recoveryWeekSet.has(wk)) { d.setDate(d.getDate() - 7); continue; } // frozen, not broken
     if ((sessionsByWeek[wk] || 0) >= goal) {
       streak++;
       d.setDate(d.getDate() - 7);
@@ -269,6 +278,46 @@ function calcStreak(sessionsByWeek, goal, now) {
     }
   }
   return streak;
+}
+
+function calcAllTimeVolume(sessions, sets, exerciseMap) {
+  const setsBySession = {};
+  for (const s of sets) {
+    if (!setsBySession[s.sessionId]) setsBySession[s.sessionId] = [];
+    setsBySession[s.sessionId].push(s);
+  }
+  let total = 0;
+  for (const sess of sessions) {
+    if (!sess.sessionEnd) continue;
+    total += calcSessionVolume(setsBySession[sess.id] || [], exerciseMap);
+  }
+  return total;
+}
+
+function makeVolumeStat(label, value, prevValue) {
+  const item = document.createElement('div');
+  item.style.cssText = 'display:flex;flex-direction:column;gap:2px;';
+
+  const labelEl = document.createElement('div');
+  labelEl.style.cssText = 'font-size:var(--text-caption);color:var(--color-ink-muted);';
+  labelEl.textContent = label;
+  item.appendChild(labelEl);
+
+  const valueEl = document.createElement('div');
+  valueEl.style.cssText = 'font-size:var(--text-h2);font-weight:var(--weight-bold);letter-spacing:var(--tracking-tight);';
+  valueEl.textContent = value > 0 ? `${Math.round(value)}kg` : '—';
+  item.appendChild(valueEl);
+
+  if (prevValue !== null && (value > 0 || prevValue > 0)) {
+    const pct = prevValue !== 0 ? ((value - prevValue) / prevValue) * 100 : 100;
+    const isUp = pct >= 0;
+    const badge = document.createElement('div');
+    badge.style.cssText = `display:flex;align-items:center;gap:2px;font-size:var(--text-caption);font-weight:var(--weight-semibold);color:${isUp ? 'var(--color-accent)' : 'var(--color-ink-muted)'};`;
+    badge.innerHTML = `<svg data-lucide="${isUp ? 'trending-up' : 'trending-down'}" width="11" height="11" stroke-width="2"></svg> ${isUp ? '+' : ''}${pct.toFixed(0)}%`;
+    item.appendChild(badge);
+  }
+
+  return item;
 }
 
 function calcVolumeByWeek(sessions, sets, exerciseMap, numWeeks) {

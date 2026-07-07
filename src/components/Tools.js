@@ -1,4 +1,4 @@
-import { getSetting, setSetting } from '../data/db.js';
+import { getSetting, setSetting, getISOWeekKey, getRecoveryWeeks, toggleRecoveryWeek } from '../data/db.js';
 import { exportCSV } from '../data/export.js';
 import { mountSettings } from './ExerciseLibrary.js';
 
@@ -9,6 +9,9 @@ export async function openTools(db, onNavigate) {
   removeTools();
 
   const lastExport = await getSetting(db, 'last_export_timestamp');
+  const thisWeekKey = getISOWeekKey(Date.now());
+  const recoveryWeeks = await getRecoveryWeeks(db);
+  let isRecovery = recoveryWeeks.includes(thisWeekKey);
 
   _overlay = document.createElement('div');
   _overlay.className = 'sheet-overlay';
@@ -101,6 +104,39 @@ export async function openTools(db, onNavigate) {
   convRow.appendChild(kgInput);
   convRow.appendChild(kgLabel);
   inner.appendChild(convRow);
+
+  // ── Recovery Week ────────────────────────────────────────────────────
+
+  const recoveryLabel = document.createElement('div');
+  recoveryLabel.className = 'section-label';
+  recoveryLabel.textContent = 'Training';
+  inner.appendChild(recoveryLabel);
+
+  const recoveryRow = document.createElement('div');
+  recoveryRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;';
+
+  const recoveryText = document.createElement('div');
+  recoveryText.innerHTML = `
+    <div style="font-size:var(--text-body);font-weight:var(--weight-semibold);">Recovery week</div>
+    <div style="font-size:var(--text-small);color:var(--color-ink-muted);">Freezes your streak — this week won't count against it</div>
+  `;
+
+  const recoveryToggle = document.createElement('button');
+  recoveryToggle.className = 'btn-icon';
+  recoveryToggle.style.cssText = `flex-shrink:0;color:${isRecovery ? 'var(--color-recovery)' : 'var(--color-ink-muted)'};`;
+  recoveryToggle.setAttribute('aria-label', 'Toggle recovery week');
+  recoveryToggle.innerHTML = `<svg data-lucide="${isRecovery ? 'toggle-right' : 'toggle-left'}" width="28" height="28" stroke-width="1.5"></svg>`;
+  recoveryToggle.addEventListener('click', async () => {
+    await toggleRecoveryWeek(db, thisWeekKey);
+    isRecovery = !isRecovery;
+    recoveryToggle.style.color = isRecovery ? 'var(--color-recovery)' : 'var(--color-ink-muted)';
+    recoveryToggle.innerHTML = `<svg data-lucide="${isRecovery ? 'toggle-right' : 'toggle-left'}" width="28" height="28" stroke-width="1.5"></svg>`;
+    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [recoveryToggle] });
+  });
+
+  recoveryRow.appendChild(recoveryText);
+  recoveryRow.appendChild(recoveryToggle);
+  inner.appendChild(recoveryRow);
 
   // ── Export ────────────────────────────────────────────────────────
 

@@ -4,8 +4,8 @@ import { mountBottomNav, setActiveTab } from './components/BottomNav.js';
 import { mountOnboarding } from './components/Onboarding.js';
 import { mountDashboard } from './components/Dashboard.js';
 import { mountProgress } from './components/Progress.js';
-import { openLogSession } from './components/LogSession.js';
-import { openTools } from './components/Tools.js';
+import { mountLogSession } from './components/LogSession.js';
+import { openTools, removeTools } from './components/Tools.js';
 import { mountExerciseLibrary, mountSettings } from './components/ExerciseLibrary.js';
 
 let _db = null;
@@ -48,14 +48,6 @@ function startApp() {
 }
 
 function handleTabChange(tab) {
-  if (tab === 'log') {
-    openLogSession(_db, () => {
-      // Refresh current tab after session ends
-      if (_currentTab === 'dashboard') navigateTo('dashboard');
-    });
-    return;
-  }
-
   if (tab === 'tools') {
     openTools(_db, (dest) => navigateTo(dest));
     return;
@@ -67,6 +59,8 @@ function handleTabChange(tab) {
 async function navigateTo(dest) {
   const contentEl = document.getElementById('tab-content');
   if (!contentEl) return;
+
+  if (dest !== 'tools') removeTools();
 
   if (dest === 'library') {
     mountExerciseLibrary(appEl, _db, () => {});
@@ -88,6 +82,8 @@ async function navigateTo(dest) {
 
   if (dest === 'dashboard') {
     await mountDashboard(contentEl, _db);
+  } else if (dest === 'log') {
+    await mountLogSession(contentEl, _db);
   } else if (dest === 'progress') {
     contentEl._db = _db;
     await mountProgress(contentEl);

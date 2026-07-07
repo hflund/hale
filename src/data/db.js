@@ -79,6 +79,26 @@ export async function getAllSettings(db) {
   return map;
 }
 
+// ── Recovery weeks ────────────────────────────────────────────────────────
+
+export async function getRecoveryWeeks(db) {
+  return (await getSetting(db, 'recovery_weeks')) || [];
+}
+
+export async function isRecoveryWeek(db, weekKey) {
+  const weeks = await getRecoveryWeeks(db);
+  return weeks.includes(weekKey);
+}
+
+export async function toggleRecoveryWeek(db, weekKey) {
+  const weeks = await getRecoveryWeeks(db);
+  const next = weeks.includes(weekKey)
+    ? weeks.filter(w => w !== weekKey)
+    : [...weeks, weekKey];
+  await setSetting(db, 'recovery_weeks', next);
+  return next;
+}
+
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export function getAllSessions(db) {
@@ -163,6 +183,39 @@ export function getExercisesByBlock(db, blockId) {
 
 export function putExercise(db, exercise) {
   return put(db, 'exercises', exercise);
+}
+
+// ── Last-session lookups ────────────────────────────────────────────────────
+
+export async function getLastExerciseSummary(db, exerciseId, excludeSessionId) {
+  const [sets, sessions] = await Promise.all([
+    getSetsByExercise(db, exerciseId),
+    getAllSessions(db),
+  ]);
+
+  const sessionMap = Object.fromEntries(sessions.map(s => [s.id, s]));
+  const eligibleSessionIds = new Set(
+    sessions
+      .filter(s => s.id !== excludeSessionId && s.sessionEnd)
+      .map(s => s.id)
+  );
+
+  let lastSessionId = null;
+  for (const set of sets) {
+    if (!set.completed || !eligibleSessionIds.has(set.sessionId)) continue;
+    const sess = sessionMap[set.sessionId];
+    if (!lastSessionId || sess.sessionStart > sessionMap[lastSessionId].sessionStart) {
+      lastSessionId = set.sessionId;
+    }
+  }
+  if (!lastSessionId) return null;
+
+  const lastSets = sets.filter(s => s.sessionId === lastSessionId && s.completed);
+  if (!lastSets.length) return null;
+
+  const count = lastSets.length;
+  const maxValue = Math.max(...lastSets.map(s => s.value));
+  return { count, maxValue, sessionStart: sessionMap[lastSessionId].sessionStart };
 }
 
 // ── Blocks ────────────────────────────────────────────────────────────────
@@ -358,5 +411,7 @@ export function getISOWeekKey(date) {
 }
 
 export function dateKey(ts) {
-  return new Date(ts).toISOString().slice(0, 10);
+  // Local-date key (not UTC) so late-evening sessions stay on the right day
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }

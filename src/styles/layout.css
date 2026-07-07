@@ -75,7 +75,7 @@ html, body {
   background: var(--color-surface-2);
   border-top: var(--border);
   display: grid;
-  grid-template-columns: 1fr 56px 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   align-items: center;
   padding: 0 var(--space-4);
   padding-bottom: env(safe-area-inset-bottom, 0);

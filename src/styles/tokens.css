@@ -15,6 +15,10 @@
   --color-accent-sub:   #EAC9B8;
   --color-accent-dim:   #8C3F22;
 
+  /* RECOVERY */
+  --color-recovery:     #94A7B5;
+  --color-recovery-sub: #D3DBE1;
+
   /* STRUCTURAL */
   --color-border:       #D9D2CA;
   --color-border-sub:   #E8E3DC;

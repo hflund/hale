@@ -120,11 +120,12 @@ export async function mountProgress(container) {
           if (detail) detail.remove();
         } else {
           expanded.add(ex.id);
-          const detail = renderExpandedChart(ex, data);
+          const pbIndices = calcPBIndices(data);
+          const detail = renderExpandedChart(ex, data, pbIndices);
           exWrap.appendChild(detail);
           requestAnimationFrame(() => {
             const chartEl = detail.querySelector('.chart-container');
-            if (chartEl) renderFullChart(chartEl, data);
+            if (chartEl) renderFullChart(chartEl, data, pbIndices);
           });
           if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [detail] });
         }
@@ -151,7 +152,7 @@ export async function mountProgress(container) {
   container.appendChild(wrap);
 }
 
-function renderExpandedChart(ex, data) {
+function renderExpandedChart(ex, data, pbIndices) {
   const el = document.createElement('div');
   el.className = 'accordion-expanded';
   el.style.padding = 'var(--space-4) var(--space-5)';
@@ -186,6 +187,21 @@ function renderExpandedChart(ex, data) {
       <span class="stat-value" style="font-size:var(--text-small);color:var(--color-ink-muted);font-weight:var(--weight-regular);">since ${sinceDate}</span>
     </div>
   `;
+
+  if (pbIndices && pbIndices.size) {
+    const lastPBIdx = Math.max(...pbIndices);
+    const pbPoint = data[lastPBIdx];
+    const pbItem = document.createElement('div');
+    pbItem.className = 'stat-item';
+    pbItem.innerHTML = `
+      <span class="stat-label" style="display:flex;align-items:center;gap:3px;color:var(--color-accent-dim);">
+        <svg data-lucide="award" width="12" height="12" stroke-width="2"></svg> PB
+      </span>
+      <span class="stat-value">${pbPoint.value}${unit} <span style="font-size:var(--text-small);color:var(--color-ink-muted);font-weight:var(--weight-regular);">${formatRelativeTime(pbPoint.date)}</span></span>
+    `;
+    statsRow.appendChild(pbItem);
+  }
+
   el.appendChild(statsRow);
 
   return el;
@@ -198,6 +214,29 @@ function calcDelta(data) {
   const abs = last - first;
   const pct = first !== 0 ? (abs / first) * 100 : 0;
   return { abs, pct };
+}
+
+function calcPBIndices(data) {
+  const indices = new Set();
+  let runningMax = -Infinity;
+  data.forEach((d, i) => {
+    if (d.value > runningMax) {
+      runningMax = d.value;
+      indices.add(i);
+    }
+  });
+  return indices;
+}
+
+function formatRelativeTime(dateKeyStr) {
+  const days = Math.floor((Date.now() - new Date(dateKeyStr).getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  const weeks = Math.floor(days / 7);
+  if (weeks < 8) return `${weeks} weeks ago`;
+  const months = Math.floor(days / 30);
+  return `${months} month${months > 1 ? 's' : ''} ago`;
 }
 
 function trackingUnit(type) {

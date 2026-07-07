@@ -76,7 +76,7 @@ export function renderSparkline(container, data) {
 
 // ── Full exercise chart ────────────────────────────────────────────────────
 
-export function renderFullChart(container, data) {
+export function renderFullChart(container, data, pbIndices = new Set()) {
   container.innerHTML = '';
   const W = container.clientWidth || 300;
   const H = 180;
@@ -159,13 +159,25 @@ export function renderFullChart(container, data) {
   svg.appendChild(svgNS('path', { d: path, fill: 'none', stroke: 'var(--color-accent)', 'stroke-width': 2.5 }));
 
   // Data point dots
-  for (const pt of pts) {
+  for (let i = 0; i < pts.length; i++) {
+    const pt = pts[i];
+    const isPB = pbIndices.has(i);
     svg.appendChild(svgNS('circle', {
-      cx: n(pt[0]), cy: n(pt[1]), r: 4,
-      fill: 'var(--color-accent)',
+      cx: n(pt[0]), cy: n(pt[1]), r: isPB ? 5 : 4,
+      fill: isPB ? 'var(--color-accent-dim)' : 'var(--color-accent)',
       stroke: 'var(--color-surface)',
       'stroke-width': 1.5,
     }));
+
+    if (isPB) {
+      // Small 4-point sparkle above the PB dot
+      const cx = pt[0], cy = pt[1] - 12;
+      const s = 4;
+      svg.appendChild(svgNS('path', {
+        d: `M ${n(cx)} ${n(cy - s)} L ${n(cx + s * 0.35)} ${n(cy - s * 0.35)} L ${n(cx + s)} ${n(cy)} L ${n(cx + s * 0.35)} ${n(cy + s * 0.35)} L ${n(cx)} ${n(cy + s)} L ${n(cx - s * 0.35)} ${n(cy + s * 0.35)} L ${n(cx - s)} ${n(cy)} L ${n(cx - s * 0.35)} ${n(cy - s * 0.35)} Z`,
+        fill: 'var(--color-accent-dim)',
+      }));
+    }
   }
 
   container.appendChild(svg);
@@ -208,74 +220,131 @@ export function renderVolumeChart(container, data) {
   container.appendChild(svg);
 }
 
-// ── Heatmap (30 days) ─────────────────────────────────────────────────────
+// ── Heatmap (365 days) ─────────────────────────────────────────────────────
 
-export function renderHeatmap(container, sessionsByDay) {
+export function renderHeatmap(container, sessionsByDay, recoveryWeekSet = new Set(), getWeekKey = null) {
   container.innerHTML = '';
 
   const today = new Date();
-  today.setHours(23, 59, 59, 999);
-  const start30 = new Date(today);
-  start30.setDate(start30.getDate() - 29);
-  start30.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const start = new Date(today);
+  start.setDate(start.getDate() - 364);
 
   // Align to Monday
-  const gridStart = new Date(start30);
+  const gridStart = new Date(start);
   const dow = (gridStart.getDay() + 6) % 7; // Mon=0
   gridStart.setDate(gridStart.getDate() - dow);
 
-  const cells = [];
-  const cursor = new Date(gridStart);
+  // Build week columns of 7 day-cells each
+  const weeks = [];
+  let cursor = new Date(gridStart);
   while (cursor <= today) {
-    const key = cursor.toISOString().slice(0, 10);
-    cells.push({
-      key,
-      count: sessionsByDay[key] || 0,
-      inRange: cursor >= start30,
-    });
-    cursor.setDate(cursor.getDate() + 1);
+    const col = [];
+    for (let d = 0; d < 7; d++) {
+      const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`;
+      const inRange = cursor >= start && cursor <= today;
+      col.push({
+        key,
+        date: new Date(cursor),
+        count: sessionsByDay[key] || 0,
+        inRange,
+        isRecovery: inRange && getWeekKey ? recoveryWeekSet.has(getWeekKey(cursor.getTime())) : false,
+      });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    weeks.push(col);
   }
 
-  const div = document.createElement('div');
-  div.style.cssText = `display:grid;grid-template-columns:repeat(7,1fr);gap:3px;`;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
 
-  for (const cell of cells) {
-    const c = document.createElement('div');
-    c.style.cssText = `
-      aspect-ratio:1;
-      border-radius: var(--radius-sm);
-      background: ${heatColor(cell.count, cell.inRange)};
-    `;
-    c.title = cell.inRange ? `${cell.key}: ${cell.count} session${cell.count !== 1 ? 's' : ''}` : '';
-    div.appendChild(c);
+  // Month labels
+  const labelRow = document.createElement('div');
+  labelRow.style.cssText = `display:grid;grid-template-columns:repeat(${weeks.length},1fr);gap:2px;`;
+  let lastMonth = -1;
+  for (const col of weeks) {
+    const firstDay = col[0].date;
+    const month = firstDay.getMonth();
+    const label = document.createElement('div');
+    label.style.cssText = `font-size:9px;color:var(--color-ink-muted);`;
+    if (month !== lastMonth) {
+      label.textContent = firstDay.toLocaleDateString('en-GB', { month: 'short' });
+      lastMonth = month;
+    }
+    labelRow.appendChild(label);
   }
+  wrap.appendChild(labelRow);
 
-  container.appendChild(div);
+  // Grid
+  const grid = document.createElement('div');
+  grid.style.cssText = `display:grid;grid-template-columns:repeat(${weeks.length},1fr);grid-template-rows:repeat(7,1fr);gap:2px;`;
+
+  for (let w = 0; w < weeks.length; w++) {
+    for (let d = 0; d < 7; d++) {
+      const cell = weeks[w][d];
+      const c = document.createElement('div');
+      c.style.cssText = `
+        grid-column: ${w + 1};
+        grid-row: ${d + 1};
+        aspect-ratio: 1;
+        border-radius: 2px;
+        background: ${yearHeatColor(cell)};
+      `;
+      c.title = cell.inRange
+        ? `${cell.key}: ${cell.isRecovery ? 'Recovery week' : `${cell.count} session${cell.count !== 1 ? 's' : ''}`}`
+        : '';
+      grid.appendChild(c);
+    }
+  }
+  wrap.appendChild(grid);
+
+  container.appendChild(wrap);
 }
 
-function heatColor(count, inRange) {
-  if (!inRange) return 'transparent';
-  if (count === 0) return 'var(--color-border)';
-  if (count === 1) return 'var(--color-accent-sub)';
-  if (count === 2) return 'rgba(184,92,56,0.6)';
+function yearHeatColor(cell) {
+  if (!cell.inRange) return 'transparent';
+  if (cell.isRecovery) return 'var(--color-recovery)';
+  if (cell.count === 0) return 'var(--color-bg)';
   return 'var(--color-accent)';
 }
 
-// ── Sessions/week bar ─────────────────────────────────────────────────────
+// ── Goal hero (weekly sessions) ────────────────────────────────────────────
 
-export function renderSessionsBar(container, current, goal) {
+export function renderGoalHero(container, current, goal, isRecovery) {
   container.innerHTML = '';
+
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:flex;gap:3px;align-items:center;';
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:var(--space-3);';
+
+  const topRow = document.createElement('div');
+  topRow.style.cssText = 'display:flex;align-items:baseline;justify-content:space-between;';
+
+  const big = document.createElement('div');
+  big.style.cssText = `font-size:var(--text-display);font-weight:var(--weight-bold);line-height:var(--leading-tight);letter-spacing:var(--tracking-tight);color:${isRecovery ? 'var(--color-recovery)' : 'var(--color-ink)'};`;
+  big.textContent = `${current} / ${goal}`;
+
+  const label = document.createElement('div');
+  label.style.cssText = 'font-size:var(--text-small);color:var(--color-ink-muted);';
+  label.textContent = isRecovery ? 'Recovery week' : 'sessions this week';
+
+  topRow.appendChild(big);
+  topRow.appendChild(label);
+  wrap.appendChild(topRow);
+
+  const segRow = document.createElement('div');
+  segRow.style.cssText = 'display:flex;gap:var(--space-2);';
   for (let i = 0; i < goal; i++) {
     const seg = document.createElement('div');
+    const filled = i < current;
     seg.style.cssText = `
-      width: 8px;
-      height: 8px;
-      border-radius: 2px;
-      background: ${i < current ? 'var(--color-accent)' : 'var(--color-border)'};
+      flex: 1;
+      height: 10px;
+      border-radius: var(--radius-full);
+      background: ${filled ? (isRecovery ? 'var(--color-recovery)' : 'var(--color-accent)') : 'var(--color-border-sub)'};
     `;
-    wrap.appendChild(seg);
+    segRow.appendChild(seg);
   }
+  wrap.appendChild(segRow);
+
   container.appendChild(wrap);
 }
